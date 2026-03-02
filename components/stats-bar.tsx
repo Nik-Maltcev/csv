@@ -28,7 +28,7 @@ export function StatsBar({
           <FileText className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">{"Всего записей"}</p>
+          <p className="text-xs text-muted-foreground">{"Строк в CSV"}</p>
           <p className="text-xl font-semibold text-foreground">{total}</p>
         </div>
       </div>
@@ -38,7 +38,7 @@ export function StatsBar({
           <FileText className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">{"Уникальных PDF"}</p>
+          <p className="text-xs text-muted-foreground">{"К скачиванию"}</p>
           <p className="text-xl font-semibold text-foreground">{uniqueCount}</p>
         </div>
       </div>
