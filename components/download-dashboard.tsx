@@ -151,19 +151,21 @@ export function DownloadDashboard() {
     [articles]
   )
 
-  // --- Download All -> ZIP ---
+  // --- Download All -> ZIP (downloads ALL unique codes from the table) ---
   const downloadAll = useCallback(async () => {
     abortRef.current = false
     setIsRunning(true)
     setMode("normal")
     setZipPhase(false)
 
+    // get fresh unique codes at the moment of click (includes brute-forced)
+    const codesToDownload = getUniqueWpgCodes(articles)
+
     const zip = new JSZip()
     let downloadedCount = 0
 
-    for (const code of uniqueCodes) {
+    for (const code of codesToDownload) {
       if (abortRef.current) break
-      if (statuses[code] === "done") continue
 
       setStatuses((prev) => ({ ...prev, [code]: "downloading" }))
 
@@ -202,64 +204,74 @@ export function DownloadDashboard() {
     }
 
     setIsRunning(false)
-  }, [uniqueCodes, statuses, articles])
+  }, [articles])
 
-  // --- Brute-force 0-9 -> ZIP ---
+  // --- Brute-force 0-9: only CHECK availability, add found codes to table ---
   const downloadBruteForce = useCallback(async () => {
     abortRef.current = false
     setIsRunning(true)
     setMode("bruteforce")
-    setZipPhase(false)
     setBruteForceResults([])
     setBruteFoundCount(0)
 
-    const totalVariations = uniqueCodes.length * 10
+    // snapshot current codes so we know which are "new"
+    const currentCodes = new Set(getUniqueWpgCodes(articles))
+    const totalVariations = currentCodes.size * 10
     setBruteProgress({ current: 0, total: totalVariations })
 
-    const zip = new JSZip()
     let found = 0
     let processed = 0
+    const newArticlesBatch: ShaftArticle[] = []
 
-    for (const originalCode of uniqueCodes) {
+    for (const originalCode of currentCodes) {
       if (abortRef.current) break
 
       const variations = getBruteForceVariations(originalCode)
       const matchingArticles = getArticlesForCode(articles, originalCode)
       const articlePrefix =
         matchingArticles.length > 0 ? matchingArticles[0].article : originalCode
+      const manufacturer =
+        matchingArticles.length > 0 ? matchingArticles[0].manufacturer : "N/A"
 
       for (const varCode of variations) {
         if (abortRef.current) break
         processed++
         setBruteProgress({ current: processed, total: totalVariations })
 
+        // skip codes already in the table
+        if (currentCodes.has(varCode)) {
+          setBruteForceResults((prev) => [
+            ...prev,
+            { code: varCode, originalCode, status: "done" },
+          ])
+          continue
+        }
+
         try {
           const checkRes = await fetch(`/api/check?code=${varCode}`)
           const checkData = await checkRes.json()
 
           if (checkData.available) {
-            const filename = `${articlePrefix}_${varCode}`
-            const safeName = filename.replace(/[/\\?%*:|"<>]/g, "_")
+            found++
+            setBruteFoundCount(found)
+            setBruteForceResults((prev) => [
+              ...prev,
+              { code: varCode, originalCode, status: "done" },
+            ])
 
-            const params = new URLSearchParams({ code: varCode, filename })
-            const res = await fetch(`/api/download?${params}`)
+            // add discovered code to batch
+            newArticlesBatch.push({
+              id: generateId(),
+              manufacturer,
+              article: `${articlePrefix} (перебор)`,
+              wpgCode: varCode,
+            })
 
-            if (res.ok) {
-              const blob = await res.blob()
-              const arrayBuffer = await blob.arrayBuffer()
-              zip.file(`${safeName}.pdf`, arrayBuffer)
-
-              found++
-              setBruteFoundCount(found)
-              setBruteForceResults((prev) => [
-                ...prev,
-                { code: varCode, originalCode, status: "done" },
-              ])
-
-              if (varCode === originalCode) {
-                setStatuses((prev) => ({ ...prev, [originalCode]: "done" }))
-              }
-            }
+            // add to table in real-time
+            setArticles((prev) => [
+              ...prev,
+              newArticlesBatch[newArticlesBatch.length - 1],
+            ])
           } else {
             setBruteForceResults((prev) => [
               ...prev,
@@ -277,17 +289,8 @@ export function DownloadDashboard() {
       }
     }
 
-    if (!abortRef.current && found > 0) {
-      setZipPhase(true)
-      const zipBlob = await zip.generateAsync({ type: "blob" })
-      const now = new Date()
-      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
-      saveBlob(zipBlob, `WALTERSCHEID_перебор_0-9_${dateStr}.zip`)
-      setZipPhase(false)
-    }
-
     setIsRunning(false)
-  }, [uniqueCodes, articles])
+  }, [articles])
 
   const stopAll = useCallback(() => {
     abortRef.current = true
@@ -450,15 +453,13 @@ export function DownloadDashboard() {
             </div>
           )}
 
-          {/* ZIP info banner */}
+          {/* Flow info banner */}
           <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-foreground">
             <p className="flex items-center gap-2">
               <Archive className="h-4 w-4 shrink-0 text-primary" />
               <span>
-                <span className="font-semibold text-primary">{"ZIP-архив:"}</span>
-                {" при массовой загрузке (\"Скачать все\" или \"Перебор 0-9\") все PDF собираются в один ZIP-архив. Отдельные файлы скачиваются по клику на "}
-                <Download className="inline h-3.5 w-3.5" />
-                {" в строке таблицы."}
+                <span className="font-semibold text-primary">{"Порядок работы:"}</span>
+                {" 1) Загрузите CSV → 2) Нажмите \"Перебор 0-9\" — найденные коды добавятся в таблицу → 3) Нажмите \"Скачать все (ZIP)\" — все PDF (включая найденные перебором) скачаются в один архив."}
               </span>
             </p>
           </div>
