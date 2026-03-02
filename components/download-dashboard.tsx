@@ -48,7 +48,7 @@ type BruteForceResult = {
 }
 
 export function DownloadDashboard() {
-  const [articles, setArticles] = useState<ShaftArticle[]>(defaultArticles)
+  const [articles, setArticles] = useState<ShaftArticle[]>([])
   const [statuses, setStatuses] = useState<Record<string, DownloadStatus>>({})
   const [filter, setFilter] = useState("")
   const [isRunning, setIsRunning] = useState(false)
